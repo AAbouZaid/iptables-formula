@@ -91,9 +91,8 @@ Allow an entire class such as your internal network:
 firewall:
   input:
     whitelist:
-      networks:
-        ips_allow:
-          - 10.0.0.0/8
+      ips_allow:
+        - 10.0.0.0/8
 ```
 
 Remove existing services or individual IPs from a serivce/whitelist
@@ -108,11 +107,10 @@ firewall:
           - 192.168.1.0/24
 
     whitelist:
-      networks:
-        ips_allow:
-          - 10.0.0.0/8
-        ips_remove
-          - 192.168.1.0/24
+      ips_allow:
+        - 10.0.0.0/8
+      ips_remove
+        - 192.168.1.0/24
 
 ```
 
