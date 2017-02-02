@@ -1,8 +1,11 @@
-  {% set firewall = salt['pillar.get']('firewall', {}) %}
-  {% set forward = firewall.get( 'forward' , {} ) %}
-  {% set icmp = forward.get('icmp', False) %}
-  {% set strict_mode = forward.get('strict', False ) %}
-  {% set global_block_nomatch = forward.get('block_nomatch', False ) %}
+  {% from 'iptables/map.jinja' import firewall with context %}
+
+  # if no input section defined, try legacy pillar without input/output
+  # sections and input services/whitelist are directly under firewall.
+  {% set forward = firewall.get('forward', firewall) %}
+  {% set icmp = forward.get('icmp', firewall.icmp) %}
+  {% set strict_mode = forward.get('strict', firewall.strict) %}
+  {% set block_nomatch = forward.get('block_nomatch', firewall.block_nomatch) %}
 
   # Forward Strict Mode
   # when Enabled, add rules for established connections
@@ -21,6 +24,16 @@
     {% set strict_position = '' %}
     {% set white_position = '- position: 1' %}
   {%- endif %}
+
+      # Rule for localhost communications
+      iptables_forward_allow_localhost:
+        iptables.{{ action }}:
+          - table: filter
+          - chain: FORWARD
+          - jump: ACCEPT
+          - source: 127.0.0.1
+          - save: True
+          {{ strict_position }}
 
       # Rule for related/established sessions
       iptables_forward_allow_established:
@@ -65,7 +78,7 @@
   # Whitelisting
 
   # Insert whitelist IPs and interfaces.
-  {%- set whitelist = forward.get( 'whitelist', {}) %}
+  {%- set whitelist = forward.get('whitelist', firewall.whitelist) %}
   {%- for ip in whitelist.get('ips_allow', {}) %}
       iptables_forward_whitelist_allow_{{ ip }}:
         iptables.insert:
@@ -111,7 +124,7 @@
            - save: True
   {%- endfor %}
 
-  {%- for network in whitelist.get('ip6s_remove',{} ) %}
+  {%- for network in whitelist.get('ip6s_remove',{}) %}
       iptables_forward_whitelist_allow_{{ ip }}:
         iptables.delete:
            - table: filter
@@ -219,11 +232,13 @@
   {% endif %}
 
   # Rules for services
-  {%- for service_name, service_details in forward.get('services', {}).items() %}
-    {% set block_nomatch = service_details.get('block_nomatch', False) %}
+  {%- for service_name, service_details in forward.get('services', firewall.services|default({})) %}
+    {% set service_block_nomatch = service_details.get('block_nomatch', False) %}
     {% set interfaces = service_details.get('interfaces', '') %}
     {% set protos = service_details.get('protos', ['tcp']) %}
-    {% set comment = service_details.get('comment', False) %}
+    {% if service_details.get('comment', False) %}
+      {% set comment = '- comment: ' + service_details.get('comment') %}
+    {% endif %}
 
     # Check if rule is marked for removal
     {%- if service_details.get('remove') %}
@@ -244,10 +259,8 @@
           - destination: {{ ip }}
           - dport: {{ service_name }}
           - proto: {{ proto }}
-          {% if comment %}
-          - comment: {{ comment }}
-          {% endif %}
           - save: True
+          {{ comment }}
         {%- endfor %}
       {%- else %}
         {%- for interface in interfaces %}
@@ -261,10 +274,8 @@
           - destination: {{ ip }}
           - dport: {{ service_name }}
           - proto: {{ proto }}
-          {% if comment %}
-          - comment: {{ comment }}
-          {% endif %}
           - save: True
+          {{ comment }}
         {%- endfor %}
         {%- endfor %}
       {%- endif %}
@@ -281,11 +292,9 @@
           - source: {{ ip }}
           - dport: {{ service_name }}
           - proto: {{ proto }}
-          {% if comment %}
-          - comment: {{ comment }}
-          {% endif %}
           - family: 'ipv6'
           - save: True
+          {{ comment }}
         {%- endfor %}
       {%- else %}
         {%- for interface in interfaces %}
@@ -299,11 +308,9 @@
           - source: {{ ip }}
           - dport: {{ service_name }}
           - proto: {{ proto }}
-          {% if comment %}
-          - comment: {{ comment }}
-          {% endif %}
           - family: 'ipv6'
           - save: True
+          {{ comment }}
           {%- endfor %}
         {%- endfor %}
       {%- endif %}
@@ -377,7 +384,7 @@
 
     # no_match rules
     # Only add no_match rule when strict is false and a no_match is true and the service is not marked remove
-    {%- if not strict_mode and ( global_block_nomatch or block_nomatch ) and not service_details.get('remove') %}
+    {%- if not strict_mode and (block_nomatch or service_block_nomatch) and not service_details.get('remove') %}
       {% set action = 'append' %}
     {%- else %}
       {% set action = 'delete' %}
