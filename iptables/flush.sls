@@ -3,37 +3,31 @@
   # If flush = true, set policy to ACCEPT and flush all.
   {% set flush = firewall.flush %}
 
-  # If testing_mode.enabled = true, it will flush iptables after x seconds.
+  # If testing_mode.enabled = true, it will flush iptables after x minutes.
   {% set testing_mode_enabled = firewall.testing_mode.enabled %}
   {% set testing_mode_timer = firewall.testing_mode.flush_after|default(1)|int %}
 
   {%- if flush or testing_mode_enabled %}
-  # IPv6 is missing!
-      iptables_input_policy_accept:
+    {% for chain in ['INPUT', 'OUTPUT', 'FORWARD'] %}
+      {% for version in ['ipv4','ipv6'] %}
+      iptables_{{ chain|lower }}_policy_accept_{{ version }}:
         iptables.set_policy:
           - table: filter
-          - chain: INPUT
+          - chain: {{ chain }}
+          - family: {{ version }}
           - policy: ACCEPT
+      {%- endfor %}
+    {%- endfor %}
 
-      iptables_output_policy_accept:
-        iptables.set_policy:
-          - table: filter
-          - chain: OUTPUT
-          - policy: ACCEPT
-
-      iptables_forward_policy_accept:
-        iptables.set_policy:
-          - table: filter
-          - chain: FORWARD
-          - policy: ACCEPT
-
-      iptables_flush:
+    {% for version in ['ipv4','ipv6'] %}
+      iptables_flush_{{ version }}:
         iptables.flush:
           - table: filter
           - require:
-            - iptables: iptables_input_policy_accept
-            - iptables: iptables_output_policy_accept
-            - iptables: iptables_forward_policy_accept
+            - iptables: iptables_input_policy_accept_{{ version }}
+            - iptables: iptables_output_policy_accept_{{ version }}
+            - iptables: iptables_forward_policy_accept_{{ version }}
+    {%- endfor %}
   {%- endif %}
 
   {%- if testing_mode_enabled %}
