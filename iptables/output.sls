@@ -1,7 +1,10 @@
-  {% set firewall = salt['pillar.get']('firewall', {}) %}
-  {% set output = firewall.get( 'output' , {} ) %}
-  {% set strict_mode = output.get('strict', False ) %}
-  {% set global_block_nomatch = output.get('block_nomatch', False ) %}
+  {% from 'iptables/map.jinja' import firewall with context %}
+
+  # if no input section defined, try legacy pillar without input/output
+  # sections and input services/whitelist are directly under firewall.
+  {% set output = firewall.get('output', firewall) %}
+  {% set strict_mode = output.get('strict', firewall.strict) %}
+  {% set block_nomatch = output.get('block_nomatch', firewall.block_nomatch) %}
 
   # Output Strict Mode
   # when Enabled, add rules for localhost/established connections 
@@ -53,11 +56,12 @@
             - iptables: iptables_OUTPUT_allow_established
 
 
-  # Rules for outbound whitelist IP classes
-  # put whitelist rules below strict rules and above service rules
-  {%- for service_name, service_details in output.get('whitelist', {}).items() %}
-    {%- for ip in service_details.get('ips_allow',{}) %}
-      iptables_OUTPUT_whitelist_allow_{{ip}}:
+  # Whitelisting
+
+  # Insert whitelist IPs and interfaces.
+  {%- set whitelist = output.get('whitelist', firewall.whitelist) %}
+  {%- for ip in whitelist.get('ips_allow', {}) %}
+      iptables_output_whitelist_allow_{{ ip }}:
         iptables.insert:
            - table: filter
            - chain: OUTPUT
@@ -65,25 +69,69 @@
            - destination: {{ ip }}
            - save: True
            {{ white_position }}
-    {%- endfor %}
+  {%- endfor %}
 
-  # Remove whitelist for ips_remove
-  {%- for ip in service_details.get('ips_remove',{}) %}
-      iptables_OUTPUT_whitelist_allow_{{ip}}:
+  {%- for ip in whitelist.get('ip6s_allow', {}) %}
+      iptables_output_whitelist_allow_{{ ip }}:
+        iptables.insert:
+          - table: filter
+          - chain: OUTPUT
+          - jump: ACCEPT
+          - destination: {{ ip }}
+          - family: 'ipv6'
+          - save: True
+          {{ white_position }}
+  {%- endfor %}
+
+  {%- for interface in whitelist.get('interfaces', {}) %}
+      iptables_output_whitelist_allow_{{ interface }}:
+        iptables.insert:
+           - table: filter
+           - chain: OUTPUT
+           - jump: ACCEPT
+           - i: {{ interface }}
+           - save: True
+           {{ white_position }}
+  {%- endfor %}
+
+  # Remove whitelist IPs and interfaces.
+  {%- for ip in whitelist.get('ips_remove', {}) %}
+      iptables_output_whitelist_allow_{{ ip }}:
         iptables.delete:
            - table: filter
            - chain: OUTPUT
            - jump: ACCEPT
            - destination: {{ ip }}
            - save: True
-    {%- endfor %}
   {%- endfor %}
 
+  {%- for network in whitelist.get('ip6s_remove',{}) %}
+      iptables_output_whitelist_allow_{{ ip }}:
+        iptables.delete:
+           - table: filter
+           - chain: OUTPUT
+           - jump: ACCEPT
+           - destination: {{ ip }}
+           - family: 'ipv6'
+           - save: True
+  {%- endfor %}
+
+  {%- for interface in whitelist.get('interfaces_remove', {}) %}
+      iptables_output_whitelist_allow_{{ interface }}:
+        iptables.delete:
+           - table: filter
+           - chain: OUTPUT
+           - jump: ACCEPT
+           - i: {{ interface }}
+           - save: True
+  {%- endfor %}
 
   # Rules for services
-  {%- for service_name, service_details in output.get('services', {}).items() %}
-    {% set block_nomatch = service_details.get('block_nomatch', False) %}
-    {% set comment = service_details.get('comment', False) %}
+  {%- for service_name, service_details in output.get('services', firewall.services|default({})).items() %}
+    {% set service_block_nomatch = service_details.get('block_nomatch', False) %}
+    {% if service_details.get('comment', False) %}
+      {% set comment = '- comment: ' + service_details.get('comment') %}
+    {% endif %}
 
     # Check if rule is marked for removal
     {%- if service_details.get('remove') %}
@@ -102,10 +150,8 @@
           - destination: {{ ip }}
           - dport: {{ service_name }}
           - proto: tcp
-          {% if comment %}
-          - comment: {{ comment }}
-          {% endif %}
           - save: True
+          {{ comment }}
     {%- endfor %}
 
     #Remove any IPs in ips_remove
@@ -124,7 +170,7 @@
 
     # no_match rules
     # Only add no_match rule when strict is false and a no_match is true and the service is not marked remove
-    {%- if not strict_mode and ( global_block_nomatch or block_nomatch ) and not service_details.get('remove') %}
+    {%- if not strict_mode and (block_nomatch or service_block_nomatch) and not service_details.get('remove') %}
       {% set action = 'append' %}
     {%- else %}
       {% set action = 'delete' %}
