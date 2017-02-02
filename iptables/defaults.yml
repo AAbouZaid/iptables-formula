@@ -1,0 +1,11 @@
+firewall:
+    install: True
+    enabled: True
+    strict: False
+    icmp: False
+    flush: True
+    debug: True
+    block_nomatch: False
+    testing_mode:
+        enabled: True
+        flush_after: 1 # In minutes.

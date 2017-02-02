@@ -1,0 +1,5 @@
+{% import_yaml "iptables/defaults.yml" as defaults %}
+{% set firewall = salt['pillar.get']("firewall",
+    default=defaults.firewall,
+    merge=True
+)%}
