@@ -10,17 +10,19 @@
 {% set pfirewall = salt['pillar.get']("%s:firewall"|format(sls_params.parent)) %}
 # Firewall management module
 {%- if salt['pillar.get']('firewall:enabled') %}
-  {% set firewall = salt['pillar.get']('firewall', {}) %}
+  {% from 'iptables/map.jinja' import firewall with context %}
   {% set install = firewall.get('install', False) %}
   {% set strict_mode = firewall.get('strict', False) %}
-  {% set global_block_nomatch = firewall.get('block_nomatch', False) %}
+  {% set block_nomatch = firewall.get('block_nomatch', False) %}
 
   # Generate ipsets for all services that we have information about
   {%- for service_name, service_details in pfirewall.get('services', {}).items() %}  
-    {% set block_nomatch = service_details.get('block_nomatch', False) %}
+    {% set service_block_nomatch = service_details.get('block_nomatch', False) %}
     {% set interfaces = service_details.get('interfaces', '') %}
     {% set protos = service_details.get('protos', ['tcp']) %}
-    {% set comment = service_details.get('comment', False) %}
+    {% if service_details.get('comment', False) %}
+      {% set comment = '- comment: ' + service_details.get('comment') %}
+    {% endif %}
 
     # Allow rules for ips/subnets
     {%- for ip in service_details.get('ips_allow',{}) %}
@@ -34,10 +36,8 @@
     - source: {{ ip }}
     - dport: {{ service_name }}
     - proto: {{ proto }}
-    {% if comment %}
-    - comment: {{ comment }}
-    {% endif %}
     - save: True
+    {{ comment }}
         {%- endfor %}
       {%- else %}
         {%- for interface in interfaces %}
@@ -50,9 +50,7 @@
     - source: {{ ip }}
     - dport: {{ service_name }}
     - proto: {{ proto }}
-    {% if comment %}
-    - comment: {{ comment }}
-    {% endif %}
+    {{ comment }}
     - i: {{ interface }}
     - save: True
           {%- endfor %}
@@ -71,11 +69,9 @@
     - source: {{ ip }}
     - dport: {{ service_name }}
     - proto: {{ proto }}
-    {% if comment %}
-    - comment: {{ comment }}
-    {% endif %}
     - family: 'ipv6'
     - save: True
+    {{ comment }}
         {%- endfor %}
       {%- else %}
         {%- for interface in interfaces %}
@@ -88,18 +84,16 @@
     - source: {{ ip }}
     - dport: {{ service_name }}
     - proto: {{ proto }}
-    {% if comment %}
-    - comment: {{ comment }}
-    {% endif %}
     - family: 'ipv6'
     - i: {{ interface }}
     - save: True
+    {{ comment }}
           {%- endfor %}
         {%- endfor %}
       {%- endif %}
     {%- endfor %}
 
-    {%- if not strict_mode and global_block_nomatch or block_nomatch %}
+    {%- if not strict_mode and block_nomatch or service_block_nomatch %}
 # If strict mode is disabled we may want to block anything else
       {%- if interfaces == '' %}
         {%- for proto in protos %}
