@@ -238,6 +238,8 @@
     {% set protos = service_details.get('protos', ['tcp']) %}
     {% if service_details.get('comment', False) %}
       {% set comment = '- comment: ' + service_details.get('comment') %}
+    {% else %}
+      {% set comment = '' %}
     {% endif %}
 
     # Check if rule is marked for removal
