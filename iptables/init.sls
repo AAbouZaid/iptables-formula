@@ -151,9 +151,9 @@
   {%- endfor %}
 
   # Generate rules for whitelisting IP classes
-  {%- for service_name, service_details in firewall.get('whitelist', {}).items() %}
-    {%- for ip in service_details.get('ips_allow', []) %}
-      iptables_{{service_name}}_allow_{{ip}}:
+  {%- for group_name, group_ips in firewall.get('whitelist', {}).items() %}
+    {%- for ip in group_ips %}
+      iptables_{{group_name}}_{{ip}}:
         iptables.append:
            - table: filter
            - chain: INPUT
