@@ -31,6 +31,7 @@
   {%- endif %}
 
   {%- if testing_mode_enabled %}
+      # Flush managed chains only.
       iptables_flush_testing_mode:
         module.run:
           - name: at.at
@@ -51,8 +52,4 @@
               ip6tables -F INPUT;
               ip6tables -F OUTPUT;
               ip6tables -F FORWARD;
-  {%- else %}
-      delete_iptables_flush_testing_mode_job:
-        schedule.absent:
-          - name: iptables_flush_testing_mode
   {%- endif %}
